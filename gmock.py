@@ -13,6 +13,11 @@ from clang.cindex import TranslationUnit
 from clang.cindex import Cursor
 from clang.cindex import CursorKind
 from clang.cindex import Config
+from clang.cindex import Diagnostic
+from clang.cindex import AccessSpecifier
+import datetime
+
+time_stamp = int((datetime.datetime.utcnow() - datetime.datetime(1970, 1, 1)).total_seconds() * 1000)
 
 if sys.version_info < (3, 0):
     import __builtin__
@@ -98,6 +103,9 @@ class mock_method:
         result.append(' ' + self.args_prefix + str(i))
         return ''.join(result)
 
+    def __str__(self):
+        return "{}".format(self.name)
+    
     def to_string(self, gap = '    '):
         mock = []
         name = self.name
@@ -207,29 +215,52 @@ class mock_generator:
                 ignore = False
         return ''.join(result)
 
-    def __get_mock_methods(self, node, mock_methods, expr = ""):
+    def __recursive_traverse(self, node, mock_methods, name_space = "", base_class_collection_mode = False):
+        if node is None: return
         name = str(node.displayname, self.encode)
-        if node.kind == CursorKind.CXX_METHOD:
+        
+        if node.kind in [CursorKind.CLASS_TEMPLATE, CursorKind.STRUCT_DECL, CursorKind.CLASS_DECL]:
+            print "Class: {} [baseCollectionMode: {}]".format(node.displayname, base_class_collection_mode)
+        
+        if node.kind == CursorKind.CXX_METHOD and node.access_specifier == AccessSpecifier.PUBLIC:
             spelling = str(node.spelling, self.encode)
             tokens = [str(token.spelling, self.encode) for token in node.get_tokens()]
             file = str(node.location.file.name, self.encode)
+            if not base_class_collection_mode and os.path.abspath(file) != self.file_name:
+                return
             if node.is_pure_virtual_method():
-                mock_methods.setdefault(expr, [file]).append(
+                print "append function {} in namespace {}".format(name, name_space)
+                if name_space in mock_methods:
+                    mock_methods[name_space][0] = file 
+                mock_methods.setdefault(name_space, [file]).append(
                     mock_method(
                          self.__get_result_type(tokens, spelling),
                          spelling,
                          node.is_const_method(),
-                         self.__is_template_class(expr),
+                         self.__is_template_class(name_space),
                          len(list(node.get_arguments())),
                          name[len(node.spelling) + 1 : -1]
                     )
                 )
         elif node.kind in [CursorKind.CLASS_TEMPLATE, CursorKind.STRUCT_DECL, CursorKind.CLASS_DECL, CursorKind.NAMESPACE]:
-            expr = expr == "" and name or expr + (name == "" and "" or "::") + name
-            if expr.startswith(self.expr):
-                [self.__get_mock_methods(c, mock_methods, expr) for c in node.get_children()]
+            if not base_class_collection_mode:
+                name_space = name_space == "" and name or name_space + (name == "" and "" or "::") + name 
+            if name_space.startswith(self.expr):
+                [self.__recursive_traverse(c, mock_methods, name_space, base_class_collection_mode) for c in node.get_children()]
         else:
-            [self.__get_mock_methods(c, mock_methods, expr) for c in node.get_children()]
+            [self.__recursive_traverse(c, mock_methods, name_space, base_class_collection_mode) for c in node.get_children()]
+        if node.kind == CursorKind.CXX_BASE_SPECIFIER:
+            file = str(node.location.file.name, self.encode)
+            if os.path.abspath(file) != self.file_name and not base_class_collection_mode:
+                return
+            print "   Bases [{}]".format(", ".join([subnode.displayname for subnode in node.get_children()]))
+            for sub_node in node.get_children():
+                if sub_node.kind is CursorKind.TYPE_REF: 
+                    self.__recursive_traverse(c.get_definition(), mock_methods, name_space, True)
+
+    def __get_mock_methods(self, node, mock_methods, name_space = ""):
+        self.__recursive_traverse(node, mock_methods, name_space, False)
+                           
 
     def __generate_file(self, expr, mock_methods, file_type, file_template_type):
         interface = self.__get_interface(expr)
@@ -244,7 +275,7 @@ class mock_generator:
                 'mock_file_hpp' : mock_file['hpp'],
                 'mock_file_cpp' : mock_file['cpp'],
                 'generated_dir' : self.path,
-                'guard' : mock_file[file_type].replace('.', '_').upper(),
+                'guard' : "__{:X}".format(time_stamp) + "_"+ mock_file[file_type].replace('.', '_').upper(),
                 'dir' : os.path.dirname(mock_methods[0]),
                 'file' : os.path.basename(mock_methods[0]),
                 'namespaces_begin' : self.__pretty_namespaces_begin(expr),
@@ -255,22 +286,14 @@ class mock_generator:
                 'namespaces_end' : self.__pretty_namespaces_end(expr)
             })
 
-    def __parse(self, files, args):
-        tmp_file = b"~.hpp"
-        def generate_includes(includes):
-            result = []
-            for include in includes:
-                result.append("#include \"%(include)s\"\n" % { 'include' : include })
-            return ''.join(result)
-
+    def __parse(self, file_name, args):
         return Index.create(excludeDecls = True).parse(
-            path = tmp_file
+            path = file_name
           , args = args
-          , unsaved_files = [(tmp_file, bytes(generate_includes(files), self.encode))]
           , options = TranslationUnit.PARSE_SKIP_FUNCTION_BODIES | TranslationUnit.PARSE_INCOMPLETE
         )
 
-    def __init__(self, files, args, expr, path, mock_file_hpp, file_template_hpp, mock_file_cpp, file_template_cpp, encode = "utf-8"):
+    def __init__(self, file_name, args, expr, path, mock_file_hpp, file_template_hpp, mock_file_cpp, file_template_cpp, encode = "utf-8"):
         self.expr = expr
         self.path = path
         self.mock_file_hpp = mock_file_hpp
@@ -278,13 +301,28 @@ class mock_generator:
         self.mock_file_cpp = mock_file_cpp
         self.file_template_cpp = file_template_cpp
         self.encode = encode
-        self.cursor = self.__parse(files, args).cursor
+        self.file_name = os.path.abspath(file_name)
+        self.class_file_map = {}
+        result = self.__parse(file_name, args)
+        abort = False
+        for d in result.diagnostics:
+            print d
+            if d.severity >= Diagnostic.Error:
+                abort = True
+        self.cursor = result.cursor
+        if abort:
+            exit(1)
+        
 
     def generate(self):
+        
         mock_methods = {}
         self.__get_mock_methods(self.cursor, mock_methods)
         for expr, mock_methods in mock_methods.items():
+            print "{}:\n  [{}]".format(expr, ", ".join([str(m) for m in mock_methods]))
             if len(mock_methods) > 0:
+                if os.path.abspath(self.file_name) != os.path.abspath(mock_methods[0]):
+                    continue
                 self.file_template_hpp != "" and self.__generate_file(expr, mock_methods, "hpp", self.file_template_hpp)
                 self.file_template_cpp != "" and self.__generate_file(expr, mock_methods, "cpp", self.file_template_cpp)
         return 0
@@ -302,9 +340,10 @@ def main(args):
     parser.add_option("-d", "--dir", dest="path", default=".", help="dir for generated mocks (default='.')", metavar="DIR")
     parser.add_option("-e", "--expr", dest="expr", default="", help="limit to interfaces within expression (default='')", metavar="LIMIT")
     parser.add_option("-l", "--libclang", dest="libclang", default=None, help="path to libclang.so (default=None)", metavar="LIBCLANG")
+    parser.add_option
     (options, args) = parser.parse_args(args)
 
-    if len(args) == 1:
+    if len(args) < 2:
         parser.error("at least one file has to be given")
 
     config = {}
@@ -314,16 +353,20 @@ def main(args):
     if options.libclang:
       Config.set_library_file(options.libclang)
 
-    return mock_generator(
-        files = args[1:],
-        args = clang_args,
-        expr = options.expr,
-        path = options.path,
-        mock_file_hpp = config['mock_file_hpp'],
-        file_template_hpp = config['file_template_hpp'],
-        mock_file_cpp = config['mock_file_cpp'],
-        file_template_cpp = config['file_template_cpp']
-    ).generate()
+    for file_name in args[1:]:
+        assert os.path.exists(file_name), "{} does not exist".format(f) 
+        result = mock_generator(
+            file_name = file_name,
+            args = clang_args,
+            expr = options.expr,
+            path = options.path,
+            mock_file_hpp = config['mock_file_hpp'],
+            file_template_hpp = config['file_template_hpp'],
+            mock_file_cpp = config['mock_file_cpp'],
+            file_template_cpp = config['file_template_cpp']
+            ).generate()
+        if (result != 0):
+            exit(1)
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
