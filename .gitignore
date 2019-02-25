@@ -4,3 +4,5 @@
 include/
 \.cproject
 \.settings/
+Makefile
+mocks/
