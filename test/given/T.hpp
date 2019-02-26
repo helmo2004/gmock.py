@@ -2,6 +2,7 @@ namespace n {
 
 template <typename Elem>
 class T {
+public:
   virtual ~T();
 
   virtual int GetSize() const = 0;

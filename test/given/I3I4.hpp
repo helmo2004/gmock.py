@@ -11,6 +11,8 @@ struct I3
         f1();
     }
 
+    virtual void f2() = 0;
+
 private:
     virtual void f1() = 0;
 };
@@ -20,7 +22,7 @@ class I4
 public:
     enum Enum { OK };
 
-    virtual ~I3() { }
+    virtual ~I4() { }
 
     virtual void f0(bool = true) = 0;
     virtual void f1(void) = 0;
