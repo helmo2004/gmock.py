@@ -6,3 +6,4 @@ include/
 \.settings/
 Makefile
 mocks/
+test/generated/
