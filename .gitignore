@@ -1,9 +1,9 @@
 *.pyc
 \.project
 \.pydevproject
-include/
 \.cproject
 \.settings/
-Makefile
 mocks/
 test/generated/
+test/tests/generated/
+*.exe

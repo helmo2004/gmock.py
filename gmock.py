@@ -389,16 +389,18 @@ class mock_generator:
     def __init__(self, file_name, args, expr, path, mock_file_hpp, file_template_hpp, mock_file_cpp, file_template_cpp, encode = "utf-8"):
         self.expr = expr
         self.path = path
+        self.clang_args = args
         self.mock_file_hpp = mock_file_hpp
         self.file_template_hpp = file_template_hpp
         self.mock_file_cpp = mock_file_cpp
         self.file_template_cpp = file_template_cpp
         self.encode = encode
         self.file_name = os.path.abspath(file_name)
-        classes = ClassCollector(file_name=file_name, clang_args=args).get_classes()
-        self.__mock_classes = [MockClass(c) for c in classes]
+        self.input_file_name = file_name
 
     def generate(self):
+        classes = ClassCollector(file_name=self.input_file_name, clang_args=self.clang_args).get_classes()
+        self.__mock_classes = [MockClass(c) for c in classes]
         for mock_class in self.__mock_classes:
             if len(mock_class.get_mock_methods()) > 0:
                 source_class = mock_class.get_source_class()
@@ -434,7 +436,9 @@ def main(args):
       Config.set_library_file(options.libclang)
 
     for file_name in args[1:]:
-        assert os.path.exists(file_name), "{} does not exist".format(f) 
+        if not os.path.exists(file_name):
+            sys.stdout.write("{} does not exist\n".format(file_name))
+            return 1 
         result = mock_generator(
             file_name = file_name,
             args = clang_args,
@@ -446,7 +450,8 @@ def main(args):
             file_template_cpp = config['file_template_cpp']
             ).generate()
         if (result != 0):
-            exit(1)
+            return result
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
