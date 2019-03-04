@@ -18,12 +18,14 @@ generated/MockA.hpp: generated
 	python ../../gmock.py include/A.hpp -d generated -- -I include/nested_include $(OS_CLANG_ARGS)
 	
 test: generated/MockA.hpp src/TestA.cpp $(GMOCK_MAIN_LIB)
-	g++ -std=c++11 generated/MockA.cpp src/TestA.cpp -I. -I include/nested_include -I$(GMOCK_INC) -I$(GTEST_INC) -o test $(GMOCK_MAIN_LIB) 
+	g++ -std=c++11 generated/MockA.cpp src/TestA.cpp -I. -I include/nested_include -I$(GMOCK_INC) -I$(GTEST_INC) -o test $(GMOCK_MAIN_LIB) -pthread 
 	
 run_test: test
 	./test
 
-clean:
+hard-clean: clean
 	make -C $(GMOCK_DIR)/make clean
+
+clean:
 	rm -rf generated
 	rm -f test
