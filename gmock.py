@@ -16,6 +16,9 @@ from clang.cindex import Config
 from clang.cindex import Diagnostic
 from clang.cindex import AccessSpecifier
 import datetime
+import subprocess
+import re
+import logging
 
 time_stamp = int((datetime.datetime.utcnow() - datetime.datetime(1970, 1, 1)).total_seconds() * 1000)
 
@@ -27,6 +30,16 @@ if sys.version_info < (3, 0):
     def bytes(object, unused = None):
         return __builtin__.bytes(object)
 
+def get_logger():
+    return logging.getLogger("gmock")
+
+def setup_logger(level):
+    logger = get_logger()
+    stream_handler = logging.StreamHandler()
+    formatter = logging.Formatter('[%(levelname)s] %(message)s')
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+    logger.setLevel(level)
 
 class Class:
     def __init__(self, node):
@@ -365,7 +378,7 @@ class mock_generator:
             'cpp' : self.mock_file_cpp % { 'interface' : interface },
         }
         path = self.path + "/" + mock_file[file_type]
-        print "Generating {}".format(path)
+        get_logger().info("Generating Mock '{}'".format(path))
         source_file_name = source_class.get_file_name()
         not os.path.exists(os.path.dirname(path)) and os.makedirs(os.path.dirname(path))
         content = file_template_type % {
@@ -399,15 +412,42 @@ class mock_generator:
         self.input_file_name = file_name
 
     def generate(self):
+        get_logger().info("Serching for classes with pure virtual (inherited) methods in '{}'".format(self.input_file_name))
         classes = ClassCollector(file_name=self.input_file_name, clang_args=self.clang_args).get_classes()
         self.__mock_classes = [MockClass(c) for c in classes]
         for mock_class in self.__mock_classes:
             if len(mock_class.get_mock_methods()) > 0:
                 source_class = mock_class.get_source_class()
-                print "Found Class '{}' with following pure virtual methods: [{}]".format(source_class.get_expr(), "; ".join(source_class.get_all_pure_virtual_methods_as_strings()))
+                get_logger().info("Found Class '{}' with following pure virtual methods: [{}]".format(source_class.get_expr(), "; ".join(source_class.get_all_pure_virtual_methods_as_strings())))
                 self.file_template_hpp != "" and self.__generate_file(mock_class, "hpp", self.file_template_hpp)
                 self.file_template_cpp != "" and self.__generate_file(mock_class, "cpp", self.file_template_cpp)
         return 0
+
+def get_lib(name):
+    if os.name == 'posix':
+        
+        null = open(os.devnull, 'wb')
+        expr = r'.*lib{name}.* => \s*(.*lib{name}.*)'.format(name=name)
+        try:
+            with null:
+                p = subprocess.Popen(['/sbin/ldconfig', '-p'],
+                                      stderr=null,
+                                      stdout=subprocess.PIPE)
+        except OSError:  # E.g. command not found
+            return None
+        [data, _] = p.communicate()
+        found_libs = re.findall(expr, data)
+        if found_libs is None:
+            get_logger().debug("No Lib found. Returning [None]")
+            return None
+        else:
+            found_libs = sorted(found_libs)
+            get_logger().debug("Found libs:\n  {}".format("\n  ".join(found_libs)))
+            get_logger().debug("Using last from list '{}'".format(found_libs[-1]))
+            return found_libs[-1]
+    else:
+        get_logger().debug("Searching for libs is not supported for OS. Returning [None]")
+        return None
 
 def main(args):
     clang_args = None
@@ -415,15 +455,20 @@ def main(args):
     if args_split:
         args, clang_args = args[:args_split[0]], args[args_split[0] + 1:]
 
-    default_config = os.path.dirname(args[0]) + "/gmock.conf"
+    default_config = os.path.dirname(os.path.realpath(__file__)) + "/gmock.conf"
 
     parser = OptionParser(usage="usage: %prog [options] files...")
-    parser.add_option("-c", "--config", dest="config", default=default_config, help="config FILE (default='gmock.conf')", metavar="FILE")
+    parser.add_option("-c", "--config", dest="config", default=default_config, help="config FILE (default='{}')".format(default_config), metavar="FILE")
     parser.add_option("-d", "--dir", dest="path", default=".", help="dir for generated mocks (default='.')", metavar="DIR")
     parser.add_option("-e", "--expr", dest="expr", default="", help="limit to interfaces within expression (default='')", metavar="LIMIT")
     parser.add_option("-l", "--libclang", dest="libclang", default=None, help="path to libclang.so (default=None)", metavar="LIBCLANG")
-    parser.add_option
+    parser.add_option("-v", "--verbose", action='store_true')
     (options, args) = parser.parse_args(args)
+
+    if options.verbose:
+        setup_logger(logging.DEBUG)
+    else:
+        setup_logger(logging.INFO) 
 
     if len(args) < 2:
         parser.error("at least one file has to be given")
@@ -433,11 +478,16 @@ def main(args):
         exec(file.read(), config)
 
     if options.libclang:
-      Config.set_library_file(options.libclang)
+        get_logger().debug("Using libclang provided by CommandLine: '{}'".format(options.libclang))
+        Config.set_library_file(options.libclang)
+    else:
+        found_lib = get_lib('clang')
+        if found_lib is not None:
+            Config.set_library_file(found_lib)   
 
     for file_name in args[1:]:
         if not os.path.exists(file_name):
-            sys.stdout.write("{} does not exist\n".format(file_name))
+            get_logger().error("File '{}' does not exist".format(file_name))
             return 1 
         result = mock_generator(
             file_name = file_name,
