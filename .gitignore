@@ -7,3 +7,4 @@ mocks/
 test/generated/
 test/tests/generated/
 *.exe
+test/tests/bin/
