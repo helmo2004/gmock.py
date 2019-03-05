@@ -26,4 +26,12 @@ TEST(TestA, callTest)
 	strictMock->Aaa(1);
 	strictMock->Bbb();
 	strictMock->Ccc();
+
+	testing::Mock::VerifyAndClearExpectations(strictMock.get());
+
+	// Check if Const Overload works
+	const NA::NAA::MockA& constA = *strictMock.get();
+	EXPECT_CALL(*strictMock, Ccc()).Times(0);
+	EXPECT_CALL(constA, Ccc());
+	constA.Ccc();
 }

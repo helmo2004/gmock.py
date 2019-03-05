@@ -68,8 +68,18 @@ class Class:
     def get_all_pure_virtual_methods(self):
         result = []
         result.extend(self.__pure_virtual_methods)
+        def is_method_already_contained_in_result(method):
+            for m in result:
+                if m.is_const_method() == method.is_const_method() and m.displayname == method.displayname:
+                    return True
+            else:
+                return False
+        
         for c in self.__parent_classes:
-            result.extend(c.get_all_pure_virtual_methods())
+            # do not add duplicates to list
+            for m in c.get_all_pure_virtual_methods():
+                if not is_method_already_contained_in_result(m):
+                    result.append(m)
         return result
     
     def get_all_pure_virtual_methods_as_strings(self):

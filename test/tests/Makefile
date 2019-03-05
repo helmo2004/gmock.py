@@ -14,7 +14,7 @@ OS_CLANG_ARGS=$(shell python get_os_dependent_clang_args.py)
 generated:
 	mkdir generated
 	
-generated/MockA.hpp: generated
+generated/MockA.hpp generated/MockA.cpp: generated include/A.hpp include/nested_include/B.hpp include/nested_include/C.hpp ../../gmock.py
 	python ../../gmock.py include/A.hpp -d generated -- -I include/nested_include $(OS_CLANG_ARGS)
 	
 test: generated/MockA.hpp src/TestA.cpp $(GMOCK_MAIN_LIB)

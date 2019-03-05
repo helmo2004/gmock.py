@@ -12,7 +12,9 @@ class C
 {
 public:
 	virtual ~C() {}
+	virtual void Ccc() const = 0;
 	virtual void Ccc() = 0;
+	virtual int Abc() = 0;
 };
 
 

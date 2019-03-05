@@ -7,6 +7,7 @@ class A : public virtual NB::B
 {
 public:
 	virtual void Aaa(int) = 0;
+	virtual int Abc() = 0;
 };
 
 }
