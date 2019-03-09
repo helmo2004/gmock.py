@@ -6,15 +6,38 @@
  */
 
 #include "generated/MockA.hpp"
-
 #include "gmock/gmock.h"
 
-TEST(TestA, createTest)
-{
-	auto mock = NA::NAA::MockA::create();
-	auto strictMock = NA::NAA::MockA::createStrict();
-	EXPECT_NE(nullptr, mock);
+using namespace testing;
+
+#define CREATE_MOCKS(__CLASS__) \
+	auto mock = __CLASS__::create(); \
+	auto strictMock = __CLASS__::createStrict(); \
+	EXPECT_NE(nullptr, mock); \
 	EXPECT_NE(nullptr, strictMock);
+
+#define TEST_MOCK_CALL_RESULT(__CLASS__, __CALL__, __RESULT__) \
+{ \
+	CREATE_MOCKS(__CLASS__); \
+	EXPECT_CALL(*mock, __CALL__).WillOnce(Return(__RESULT__)); \
+	EXPECT_EQ(__RESULT__, mock->__CALL__); \
+	EXPECT_CALL(*strictMock, __CALL__).WillOnce(Return(__RESULT__)); \
+	EXPECT_EQ(__RESULT__, strictMock->__CALL__); \
+}
+
+#define TEST_MOCK_CALL_NO_RESULT(__CLASS__, __CALL__) \
+{ \
+	CREATE_MOCKS(__CLASS__); \
+	EXPECT_CALL(*mock, __CALL__); \
+	mock->__CALL__; \
+	EXPECT_CALL(*strictMock, __CALL__); \
+	strictMock->__CALL__; \
+}
+
+TEST(TestA, MacroTest)
+{
+	TEST_MOCK_CALL_RESULT(NA::NAA::MockA, Abc(), 1);
+	TEST_MOCK_CALL_NO_RESULT(NA::NAA::MockA, Aaa(3));
 }
 
 TEST(TestA, callTest)
