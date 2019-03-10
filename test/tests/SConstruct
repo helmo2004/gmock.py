@@ -1,0 +1,29 @@
+import os
+
+# gmock
+gmock_build_dir = os.path.join('..', '..', 'googletest', 'googlemock', 'make')
+gmock_lib = Command(os.path.join(gmock_build_dir,'gmock_main.a'), [],"cd {} && make -j4 gmock_main.a".format(gmock_build_dir))
+Clean(gmock_lib, Glob(os.path.join(gmock_build_dir,'*.o')))
+
+env = Environment()
+env.Append(CPPPATH=[
+    os.path.join('..', '..', 'googletest', 'googletest', 'include'),
+    os.path.join('..', '..', 'googletest', 'googlemock', 'include'),
+    os.path.join('.'),
+    os.path.join('.', 'include', 'nested_include'),
+    ])
+
+mock_cpp, mock_hpp = env.Command([os.path.join('generated', 'MockA.cpp'), os.path.join('generated', 'MockA.hpp')], ['include/A.hpp', '../../gmock.py'], 'python ../../gmock.py include/A.hpp -d generated -- -I include/nested_include')
+
+bin = env.Program('test.elf', [
+    os.path.join('src', 'TestA.cpp'),
+    mock_cpp,
+    gmock_lib
+    ],
+    LIBS=['pthread'])
+
+test = env.Command('test', bin, './{}'.format(bin[0]))
+env.AlwaysBuild(test)
+env.Precious(test)
+
+env.Alias('mocks', [mock_cpp, mock_hpp])

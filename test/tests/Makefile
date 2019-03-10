@@ -1,34 +1,9 @@
-GTEST_BASE=../../googletest
-GMOCK_DIR=$(GTEST_BASE)/googlemock
-GMOCK_INC=$(GMOCK_DIR)/include
-GTEST_INC=$(GTEST_BASE)/googletest/include
-GMOCK_MAIN_LIB=$(GMOCK_DIR)/make/gmock_main.a
+SCONS_CMD = scons -Q
 
-gmock_main: $(GMOCK_MAIN_LIB)
+.PHONY = test mocks
 
-$(GMOCK_MAIN_LIB):
-	make -C $(GMOCK_DIR)/make gmock_main.a
-
-OS_CLANG_ARGS=$(shell python get_os_dependent_clang_args.py)
-	
-generated:
-	mkdir generated
-	
-bin:
-	mkdir bin
-	
-generated/MockA.hpp generated/MockA.cpp: generated include/A.hpp include/nested_include/B.hpp include/nested_include/C.hpp ../../gmock.py
-	python ../../gmock.py include/A.hpp -d generated -- -I include/nested_include $(OS_CLANG_ARGS)
-	
-bin/test: generated/MockA.hpp src/TestA.cpp $(GMOCK_MAIN_LIB) bin
-	g++ -std=c++11 generated/MockA.cpp src/TestA.cpp -I. -I include/nested_include -I$(GMOCK_INC) -I$(GTEST_INC) -o bin/test $(GMOCK_MAIN_LIB) -pthread 
-	
-run_test: bin/test
-	./bin/test
-
-hard-clean: clean
-	make -C $(GMOCK_DIR)/make clean
+%:
+	$(SCONS_CMD) -j4 $@
 
 clean:
-	rm -rf generated
-	rm -f test
+	$(SCONS_CMD) -c

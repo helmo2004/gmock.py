@@ -8,3 +8,4 @@ test/generated/
 test/tests/generated/
 *.exe
 test/tests/bin/
+test/tests/\.sconsign\.dblite
